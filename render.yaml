@@ -10,7 +10,7 @@ services:
     # 1. Install all deps (including devDeps needed for tsc)
     # 2. Generate Prisma Client
     # 3. Compile TypeScript → dist/
-    buildCommand: npm install --include=dev && npx prisma generate && npm run build
+    buildCommand: npm install && npx prisma generate && npm run build
 
     # ── Pre-deploy migration ──────────────────────────────────────────────────
     # prisma migrate deploy is safe for production:
