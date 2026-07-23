@@ -17,10 +17,11 @@ services:
     # - applies pending migrations only
     # - never prompts, never resets data
     # - idempotent: safe to re-run on every deploy
-    preDeployCommand: npx prisma migrate deploy
+    # NOTE: embedded in startCommand so it runs regardless of deploy method
+    # (preDeployCommand only fires in Blueprint/render.yaml deployments)
 
     # ── Start ────────────────────────────────────────────────────────────────
-    startCommand: npm start
+    startCommand: npx prisma migrate deploy && npm start
 
     # ── Health check ─────────────────────────────────────────────────────────
     # Render uses this to confirm the service is alive after each deploy.
