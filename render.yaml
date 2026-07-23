@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: foodypop-api
+    runtime: node
+    region: oregon           # change to frankfurt/singapore if your users are elsewhere
+    plan: free               # upgrade to starter/standard for production SLAs
+    branch: main
+
+    # ── Build ────────────────────────────────────────────────────────────────
+    # 1. Install all deps (including devDeps needed for tsc)
+    # 2. Generate Prisma Client
+    # 3. Compile TypeScript → dist/
+    buildCommand: npm install && npx prisma generate && npm run build
+
+    # ── Pre-deploy migration ──────────────────────────────────────────────────
+    # prisma migrate deploy is safe for production:
+    # - applies pending migrations only
+    # - never prompts, never resets data
+    # - idempotent: safe to re-run on every deploy
+    preDeployCommand: npx prisma migrate deploy
+
+    # ── Start ────────────────────────────────────────────────────────────────
+    startCommand: npm start
+
+    # ── Health check ─────────────────────────────────────────────────────────
+    # Render uses this to confirm the service is alive after each deploy.
+    healthCheckPath: /health
+
+    # ── Environment variables ─────────────────────────────────────────────────
+    # Secrets (DATABASE_URL, JWT_SECRET) are set in the Render dashboard —
+    # NEVER committed to source control.
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        generateValue: false   # Render injects PORT automatically; listed here for clarity
+      - key: DATABASE_URL
+        sync: false            # set in Render dashboard → Environment → Secret Files / Env Vars
+      - key: JWT_SECRET
+        sync: false            # set in Render dashboard → Environment → Secret Files / Env Vars

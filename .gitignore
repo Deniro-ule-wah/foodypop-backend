@@ -1,0 +1,24 @@
+# ── Dependencies ─────────────────────────────────────────
+node_modules/
+
+# ── Build output ──────────────────────────────────────────
+dist/
+
+# ── Environment secrets (NEVER commit these) ──────────────
+.env
+.env.local
+.env.*.local
+
+# ── Prisma ────────────────────────────────────────────────
+# Generated client is rebuilt on every deploy via `prisma generate`
+prisma/client/
+
+# ── Logs ─────────────────────────────────────────────────
+*.log
+logs/
+
+# ── OS / Editor ───────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

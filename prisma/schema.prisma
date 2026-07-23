@@ -1,0 +1,179 @@
+// ==========================================================
+// FOODYPOP CORE SCHEMA — v0.1 (MVP)
+// Principle: DISH FIRST, PEOPLE SECOND.
+// Everything else (food graph, substitute/complement engines,
+// analytics, SEO pages) is derived FROM this data later —
+// it does not need its own tables yet.
+// ==========================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  CONSUMER
+  VENDOR
+  CREATOR
+}
+
+enum DishKind {
+  FOOD
+  DRINK
+}
+
+enum TasteGestureType {
+  DELICIOUS
+  SWEET
+  BITTER
+  SOUR
+  SALTY
+  SPICY
+  REFRESHING
+  CRISPY
+  RICH
+  FILLING
+}
+
+enum FollowTargetType {
+  DISH
+  CUISINE
+  CATEGORY
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String?       @unique
+  phone        String?       @unique
+  passwordHash String?       // nullable: existing seeded users have no password yet
+  displayName  String
+  accountType  AccountType    @default(CONSUMER)
+  createdAt    DateTime      @default(now())
+
+  vendor      Vendor?
+  media       Media[]
+  gestures    TasteGesture[]
+  reviews     Review[]
+  follows     Follow[]
+}
+
+// Vendor is a thin supplier record. It exists to attach dishes
+// to a location/hours — it is NOT the star of the platform.
+model Vendor {
+  id           String   @id @default(cuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String   @unique
+  name         String
+  latitude     Float?
+  longitude    Float?
+  address      String?
+  openingHours Json?    // e.g. { "mon": "08:00-20:00", ... }
+  createdAt    DateTime @default(now())
+
+  dishes       Dish[]
+}
+
+model Cuisine {
+  id    String @id @default(cuid())
+  name  String @unique // e.g. "Kenyan", "Italian", "Japanese"
+  dishes Dish[]
+}
+
+model Category {
+  id     String @id @default(cuid())
+  name   String @unique // e.g. "Burgers", "Coffee", "Biryani"
+  dishes Dish[]
+}
+
+// THE CORE ENTITY. Everything on the platform points to this.
+model Dish {
+  id              String   @id @default(cuid())
+  name            String
+  kind            DishKind @default(FOOD)
+  description     String?
+  price           Float
+  currency        String   @default("KES") // ISO 4217 code; defaulted so existing rows aren't broken
+  discountPrice   Float?
+  ingredients     String[] @default([])
+  prepTimeMinutes Int?
+  deliveryAvail   Boolean  @default(false)
+  pickupAvail     Boolean  @default(true)
+  isAvailable     Boolean  @default(true)
+
+  vendor          Vendor    @relation(fields: [vendorId], references: [id])
+  vendorId        String
+
+  cuisine         Cuisine?  @relation(fields: [cuisineId], references: [id])
+  cuisineId       String?
+
+  category        Category? @relation(fields: [categoryId], references: [id])
+  categoryId      String?
+
+  media           Media[]
+  gestures        TasteGesture[]
+  reviews         Review[]
+
+  // Denormalized counters — updated on write, avoids COUNT() on every feed load.
+  viewCount       Int      @default(0)
+  saveCount       Int      @default(0)
+  tasteScore      Float    @default(0) // derived from gesture distribution
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([cuisineId])
+  @@index([categoryId])
+  @@index([vendorId])
+}
+
+model Media {
+  id        String   @id @default(cuid())
+  url       String
+  type      String   // "photo" | "video"
+  dish      Dish     @relation(fields: [dishId], references: [id])
+  dishId    String
+  uploadedBy User?   @relation(fields: [userId], references: [id])
+  userId    String?
+  isVendorUpload Boolean @default(false)
+  createdAt DateTime @default(now())
+}
+
+// Replaces "likes". One gesture per user per dish (upsert on change).
+model TasteGesture {
+  id     String            @id @default(cuid())
+  type   TasteGestureType
+  dish   Dish              @relation(fields: [dishId], references: [id])
+  dishId String
+  user   User              @relation(fields: [userId], references: [id])
+  userId String
+  createdAt DateTime @default(now())
+
+  @@unique([dishId, userId]) // one active gesture per user per dish
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int      // 1-5
+  comment   String?
+  dish      Dish     @relation(fields: [dishId], references: [id])
+  dishId    String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+}
+
+// Users follow DISHES, CUISINES, CATEGORIES — never people.
+model Follow {
+  id         String           @id @default(cuid())
+  user       User             @relation(fields: [userId], references: [id])
+  userId     String
+  targetType FollowTargetType
+  targetId   String           // points to Dish.id, Cuisine.id, or Category.id
+  createdAt  DateTime         @default(now())
+
+  @@unique([userId, targetType, targetId])
+}

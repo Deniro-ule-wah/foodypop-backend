@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: foodypop
+      POSTGRES_PASSWORD: foodypop
+      POSTGRES_DB: foodypop
+    ports:
+      # Host port 5433, not 5432: during live verification, a common setup
+      # (native PostgreSQL already installed on the host, e.g. via a
+      # different tool/project) was found already bound to 5432, causing
+      # a P1000 auth failure with no obvious cause. 5433 avoids that
+      # collision by default; change back to "5432:5432" only if you're
+      # certain nothing else on your machine is using that port.
+      - "5433:5432"
+    volumes:
+      - foodypop_pgdata:/var/lib/postgresql/data
+
+volumes:
+  foodypop_pgdata:
