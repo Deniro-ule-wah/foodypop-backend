@@ -441,6 +441,8 @@ model LedgerEntry {
   providerReference   String?
   createdAt           DateTime       @default(now())
 
+  refundObligations   RefundObligation[]
+
   @@index([orderId])
 }
 
