@@ -75,9 +75,11 @@ export async function finalizeSuccessfulPayment(
         "finalizeSuccessfulPayment no-op: attempt was not in an active state"
       );
 
+      const reason = existing?.status === "SUCCESS" ? "already_finalized" : "not_active";
+
       return {
         finalized: false,
-        reason: existing?.status === "SUCCESS" ? "already_finalized" : "not_active",
+        reason,
         orderId: existing?.orderId,
       };
     }
