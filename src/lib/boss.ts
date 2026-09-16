@@ -21,6 +21,12 @@ let boss: PgBoss | null = null;
 let started = false;
 let stopping = false;
 
+const activeQueues = new Set<string>();
+
+export function registerActiveQueue(queueName: string) {
+  activeQueues.add(queueName);
+}
+
 export function getBoss(): PgBoss {
   if (!boss) throw new Error("pg-boss has not been started");
   return boss;
@@ -30,7 +36,7 @@ export function bossHealth() {
   return {
     started,
     stopping,
-    queues: [QUEUE_PAYMENT_RECONCILIATION, QUEUE_ORDER_DEADLINE, QUEUE_RECONCILIATION_SWEEP],
+    queues: Array.from(activeQueues),
   };
 }
 
@@ -61,9 +67,22 @@ export async function startBoss(): Promise<PgBoss> {
 
   await boss.start();
 
-  await boss.createQueue(QUEUE_PAYMENT_RECONCILIATION);
-  await boss.createQueue(QUEUE_ORDER_DEADLINE);
-  await boss.createQueue(QUEUE_RECONCILIATION_SWEEP);
+  activeQueues.clear();
+  const requiredQueues = [
+    QUEUE_PAYMENT_RECONCILIATION,
+    QUEUE_ORDER_DEADLINE,
+    QUEUE_RECONCILIATION_SWEEP,
+  ];
+
+  for (const queue of requiredQueues) {
+    try {
+      await boss.createQueue(queue);
+      activeQueues.add(queue);
+    } catch (err) {
+      logger.error({ err, queue, operation: "createQueue" }, `Failed to create queue ${queue}`);
+      throw err;
+    }
+  }
 
   started = true;
   logger.info({ queues: bossHealth().queues }, "pg-boss started");
@@ -92,5 +111,6 @@ export async function stopBoss(): Promise<void> {
     started = false;
     stopping = false;
     boss = null;
+    activeQueues.clear();
   }
 }

@@ -1,7 +1,14 @@
 import type { Job } from "pg-boss";
 import { prisma } from "../lib/prisma";
 import { logger } from "../lib/logger";
-import { getBoss, QUEUE_PAYMENT_RECONCILIATION, QUEUE_ORDER_DEADLINE, QUEUE_RECONCILIATION_SWEEP } from "../lib/boss";
+import {
+  getBoss,
+  bossHealth,
+  registerActiveQueue,
+  QUEUE_PAYMENT_RECONCILIATION,
+  QUEUE_ORDER_DEADLINE,
+  QUEUE_RECONCILIATION_SWEEP,
+} from "../lib/boss";
 import { enqueuePaymentReconciliation } from "../lib/jobs";
 import { verifyAndReconcile, markLocalTimeout } from "../lib/reconciliation";
 import type { PaymentReconciliationJob, OrderDeadlineJob } from "../lib/jobs";
@@ -200,35 +207,73 @@ export { QUEUE_RECONCILIATION_SWEEP };
 export async function registerWorkers(): Promise<void> {
   const boss = getBoss();
 
-  await boss.createQueue(QUEUE_RECONCILIATION_SWEEP);
+  try {
+    await boss.createQueue(QUEUE_RECONCILIATION_SWEEP);
+    registerActiveQueue(QUEUE_RECONCILIATION_SWEEP);
+  } catch (err) {
+    logger.error(
+      { err, queue: QUEUE_RECONCILIATION_SWEEP, operation: "createQueue" },
+      "Failed to create RECONCILIATION_SWEEP queue"
+    );
+    throw err;
+  }
 
-  await boss.work<PaymentReconciliationJob>(
-    QUEUE_PAYMENT_RECONCILIATION,
-    { batchSize: Number(process.env.RECONCILIATION_BATCH_SIZE || 5) },
-    handlePaymentReconciliation
-  );
+  try {
+    await boss.work<PaymentReconciliationJob>(
+      QUEUE_PAYMENT_RECONCILIATION,
+      { batchSize: Number(process.env.RECONCILIATION_BATCH_SIZE || 5) },
+      handlePaymentReconciliation
+    );
+    registerActiveQueue(QUEUE_PAYMENT_RECONCILIATION);
+  } catch (err) {
+    logger.error(
+      { err, queue: QUEUE_PAYMENT_RECONCILIATION, operation: "work" },
+      "Failed to register PAYMENT_RECONCILIATION worker"
+    );
+    throw err;
+  }
 
-  await boss.work<OrderDeadlineJob>(
-    QUEUE_ORDER_DEADLINE,
-    { batchSize: Number(process.env.DEADLINE_BATCH_SIZE || 20) },
-    handleOrderDeadline
-  );
+  try {
+    await boss.work<OrderDeadlineJob>(
+      QUEUE_ORDER_DEADLINE,
+      { batchSize: Number(process.env.DEADLINE_BATCH_SIZE || 20) },
+      handleOrderDeadline
+    );
+    registerActiveQueue(QUEUE_ORDER_DEADLINE);
+  } catch (err) {
+    logger.error(
+      { err, queue: QUEUE_ORDER_DEADLINE, operation: "work" },
+      "Failed to register ORDER_DEADLINE worker"
+    );
+    throw err;
+  }
 
-  await boss.work(QUEUE_RECONCILIATION_SWEEP, async () => {
-    await handleReconciliationSweep();
-  });
+  try {
+    await boss.work(QUEUE_RECONCILIATION_SWEEP, async () => {
+      await handleReconciliationSweep();
+    });
+  } catch (err) {
+    logger.error(
+      { err, queue: QUEUE_RECONCILIATION_SWEEP, operation: "work" },
+      "Failed to register RECONCILIATION_SWEEP worker"
+    );
+    throw err;
+  }
 
-  // Safety net for anything that never got enqueued (process restart,
-  // enqueue failure). pg-boss's own scheduler — not a custom timer.
-  await boss.schedule(
-    QUEUE_RECONCILIATION_SWEEP,
-    process.env.RECONCILIATION_SWEEP_CRON || "*/2 * * * *"
-  );
+  try {
+    await boss.schedule(
+      QUEUE_RECONCILIATION_SWEEP,
+      process.env.RECONCILIATION_SWEEP_CRON || "*/2 * * * *"
+    );
+  } catch (err) {
+    logger.error(
+      { err, queue: QUEUE_RECONCILIATION_SWEEP, operation: "schedule" },
+      "Failed to register RECONCILIATION_SWEEP schedule"
+    );
+    throw err;
+  }
 
-  logger.info(
-    { queues: [QUEUE_PAYMENT_RECONCILIATION, QUEUE_ORDER_DEADLINE, QUEUE_RECONCILIATION_SWEEP] },
-    "pg-boss workers registered"
-  );
+  logger.info({ queues: bossHealth().queues }, "pg-boss workers registered");
 }
 
 export { handlePaymentReconciliation, handleOrderDeadline, handleReconciliationSweep };
