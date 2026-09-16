@@ -78,6 +78,7 @@ describe("pg-boss startup", () => {
     const health = bossHealth();
     expect(health.started).toBe(true);
     expect(health.queues).toContain(QUEUE_PAYMENT_RECONCILIATION);
+    expect(health.queues).toContain("RECONCILIATION_SWEEP");
   });
 
   it("creates the required queues", async () => {
@@ -85,6 +86,7 @@ describe("pg-boss startup", () => {
     const names = queues.map((q: { name: string }) => q.name);
     expect(names).toContain(QUEUE_PAYMENT_RECONCILIATION);
     expect(names).toContain("ORDER_DEADLINE");
+    expect(names).toContain("RECONCILIATION_SWEEP");
   });
 
   it("registers workers without error", async () => {

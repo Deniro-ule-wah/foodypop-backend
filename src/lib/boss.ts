@@ -15,6 +15,7 @@ import { logger } from "./logger";
 
 export const QUEUE_PAYMENT_RECONCILIATION = "PAYMENT_RECONCILIATION";
 export const QUEUE_ORDER_DEADLINE = "ORDER_DEADLINE";
+export const QUEUE_RECONCILIATION_SWEEP = "RECONCILIATION_SWEEP";
 
 let boss: PgBoss | null = null;
 let started = false;
@@ -26,7 +27,11 @@ export function getBoss(): PgBoss {
 }
 
 export function bossHealth() {
-  return { started, stopping, queues: [QUEUE_PAYMENT_RECONCILIATION, QUEUE_ORDER_DEADLINE] };
+  return {
+    started,
+    stopping,
+    queues: [QUEUE_PAYMENT_RECONCILIATION, QUEUE_ORDER_DEADLINE, QUEUE_RECONCILIATION_SWEEP],
+  };
 }
 
 /**
@@ -58,6 +63,7 @@ export async function startBoss(): Promise<PgBoss> {
 
   await boss.createQueue(QUEUE_PAYMENT_RECONCILIATION);
   await boss.createQueue(QUEUE_ORDER_DEADLINE);
+  await boss.createQueue(QUEUE_RECONCILIATION_SWEEP);
 
   started = true;
   logger.info({ queues: bossHealth().queues }, "pg-boss started");

@@ -12,6 +12,7 @@ vi.mock("../src/lib/boss", () => ({
   getBoss: () => ({ send: sendMock, sendAfter: sendAfterMock }),
   QUEUE_PAYMENT_RECONCILIATION: "PAYMENT_RECONCILIATION",
   QUEUE_ORDER_DEADLINE: "ORDER_DEADLINE",
+  QUEUE_RECONCILIATION_SWEEP: "RECONCILIATION_SWEEP",
 }));
 
 import { enqueuePaymentReconciliation, enqueueOrderDeadline } from "../src/lib/jobs";

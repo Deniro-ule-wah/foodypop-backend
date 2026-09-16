@@ -1,7 +1,7 @@
 import type { Job } from "pg-boss";
 import { prisma } from "../lib/prisma";
 import { logger } from "../lib/logger";
-import { getBoss, QUEUE_PAYMENT_RECONCILIATION, QUEUE_ORDER_DEADLINE } from "../lib/boss";
+import { getBoss, QUEUE_PAYMENT_RECONCILIATION, QUEUE_ORDER_DEADLINE, QUEUE_RECONCILIATION_SWEEP } from "../lib/boss";
 import { enqueuePaymentReconciliation } from "../lib/jobs";
 import { verifyAndReconcile, markLocalTimeout } from "../lib/reconciliation";
 import type { PaymentReconciliationJob, OrderDeadlineJob } from "../lib/jobs";
@@ -192,7 +192,7 @@ async function handleReconciliationSweep(): Promise<void> {
   }
 }
 
-export const QUEUE_RECONCILIATION_SWEEP = "RECONCILIATION_SWEEP";
+export { QUEUE_RECONCILIATION_SWEEP };
 
 /**
  * Registers all workers. Called after startBoss() so the queues exist.
