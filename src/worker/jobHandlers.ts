@@ -225,7 +225,10 @@ export async function registerWorkers(): Promise<void> {
     process.env.RECONCILIATION_SWEEP_CRON || "*/2 * * * *"
   );
 
-  logger.info("pg-boss workers registered");
+  logger.info(
+    { queues: [QUEUE_PAYMENT_RECONCILIATION, QUEUE_ORDER_DEADLINE, QUEUE_RECONCILIATION_SWEEP] },
+    "pg-boss workers registered"
+  );
 }
 
 export { handlePaymentReconciliation, handleOrderDeadline, handleReconciliationSweep };
