@@ -45,7 +45,7 @@ export async function finalizeSuccessfulPayment(
   paymentAttemptId: string,
   providerVerification: ProviderVerification
 ): Promise<FinalizationResult> {
-  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient): Promise<FinalizationResult> => {
     // Conditional update IS the concurrency control. If a concurrent
     // caller already finalized this attempt, `count` comes back 0 and we
     // no-op rather than double-applying the financial effect.
