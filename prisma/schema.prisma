@@ -59,6 +59,11 @@ model User {
   gestures    TasteGesture[]
   reviews     Review[]
   follows     Follow[]
+
+  // V2
+  vendorMemberships VendorMembership[]
+  platformStaff     PlatformStaff?
+  orders            Order[]
 }
 
 // Vendor is a thin supplier record. It exists to attach dishes
@@ -75,6 +80,10 @@ model Vendor {
   createdAt    DateTime @default(now())
 
   dishes       Dish[]
+
+  // V2
+  memberships  VendorMembership[]
+  orders       Order[]
 }
 
 model Cuisine {
@@ -124,6 +133,9 @@ model Dish {
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  // V2: Dish serves the "Offering" role; OrderItem references it.
+  orderItems      OrderItem[]
 
   @@index([cuisineId])
   @@index([categoryId])
@@ -176,4 +188,279 @@ model Follow {
   createdAt  DateTime         @default(now())
 
   @@unique([userId, targetType, targetId])
+}
+
+// ==========================================================
+// V2 — ORDERS, PAYMENTS, LEDGER, MEMBERSHIP
+// ==========================================================
+
+enum VendorRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+enum PlatformRole {
+  SUPPORT
+  OPS
+  FINANCE
+  ADMIN
+}
+
+enum MembershipStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PENDING_VENDOR_ACCEPTANCE
+  ACCEPTED
+  PREPARING
+  READY_FOR_PICKUP
+  COLLECTED
+  COMPLETED
+  CUSTOMER_CANCELLED
+  VENDOR_REJECTED
+  CANCELLED_AFTER_ACCEPTANCE
+  NO_SHOW
+}
+
+enum FulfillmentMode {
+  PICKUP
+  DELIVERY
+}
+
+enum DeadlineReason {
+  PAYMENT
+  VENDOR_ACCEPTANCE
+  PREPARATION
+  PICKUP
+  PAYMENT_RECONCILIATION
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  TIMEOUT
+  UNKNOWN
+}
+
+enum ReconciliationOutcome {
+  PROVIDER_SUCCESS
+  PROVIDER_FAILURE
+  PROVIDER_UNKNOWN
+  PROVIDER_UNREACHABLE
+  LOCAL_TIMEOUT
+}
+
+enum PickupChannel {
+  QR
+  PIN
+}
+
+enum PickupCredentialStatus {
+  UNUSED
+  USED
+  INVALIDATED
+}
+
+enum RefundReason {
+  VENDOR_REJECTED
+  CUSTOMER_CANCELLED
+  DISPUTE_RESOLVED
+}
+
+enum RefundStatus {
+  REFUND_PENDING
+}
+
+// Vendor authorization source of truth. Supersedes Vendor.userId,
+// which is retained as a deprecated legacy pointer until a later
+// cleanup migration (two-phase removal, per locked policy).
+model VendorMembership {
+  id        String           @id @default(cuid())
+  user      User             @relation(fields: [userId], references: [id])
+  userId    String
+  vendor    Vendor           @relation(fields: [vendorId], references: [id])
+  vendorId  String
+  role      VendorRole
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([userId, vendorId])
+  @@index([vendorId, status])
+}
+
+// FoodyPop internal staff. Entirely separate authorization boundary
+// from VendorMembership — never conflate the two.
+model PlatformStaff {
+  id        String           @id @default(cuid())
+  user      User             @relation(fields: [userId], references: [id])
+  userId    String           @unique
+  role      PlatformRole
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model Order {
+  id              String          @id @default(cuid())
+  customer        User            @relation(fields: [customerId], references: [id])
+  customerId      String
+  vendor          Vendor          @relation(fields: [vendorId], references: [id])
+  vendorId        String
+  status          OrderStatus     @default(PENDING_PAYMENT)
+  fulfillmentMode FulfillmentMode @default(PICKUP)
+  idempotencyKey  String
+  deadlineAt      DateTime?
+  deadlineReason  DeadlineReason?
+  completedAt     DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  items           OrderItem[]
+  events          OrderEvent[]
+  paymentAttempts PaymentAttempt[]
+  pickupCredential PickupCredential?
+  ledgerEntries   LedgerEntry[]
+  refundObligations RefundObligation[]
+
+  @@unique([customerId, idempotencyKey])
+  @@index([vendorId, status])
+  @@index([deadlineAt, deadlineReason])
+}
+
+// unitPrice/subtotal are snapshots taken at order time so later
+// catalogue price changes never rewrite historical orders.
+model OrderItem {
+  id         String  @id @default(cuid())
+  order      Order   @relation(fields: [orderId], references: [id])
+  orderId    String
+  // offeringId references Dish — Dish serves the V2 "Offering" role.
+  offering   Dish    @relation(fields: [offeringId], references: [id])
+  offeringId String
+  quantity   Int
+  unitPrice  Float
+  subtotal   Float
+
+  @@index([orderId])
+}
+
+// Durable, versioned, consumer-neutral business events. Written in the
+// same transaction as the state change they describe.
+model OrderEvent {
+  id        String   @id @default(cuid())
+  order     Order    @relation(fields: [orderId], references: [id])
+  orderId   String
+  eventType String
+  version   Int      @default(1)
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([orderId, createdAt])
+  @@index([eventType, createdAt])
+}
+
+model PickupCredential {
+  id        String                 @id @default(cuid())
+  order     Order                  @relation(fields: [orderId], references: [id])
+  orderId   String                 @unique
+  codeHash  String                 @unique
+  channel   PickupChannel          @default(QR)
+  status    PickupCredentialStatus @default(UNUSED)
+  issuedAt  DateTime               @default(now())
+  usedAt    DateTime?
+  usedBy    String?
+}
+
+// phoneNumber is captured fresh at payment time and is deliberately
+// independent of User.phone — a customer may pay from a different
+// M-Pesa number than their account phone.
+model PaymentAttempt {
+  id                     String        @id @default(cuid())
+  order                  Order         @relation(fields: [orderId], references: [id])
+  orderId                String
+  status                 PaymentStatus @default(PENDING)
+  amount                 Float
+  currency               String        @default("KES")
+  phoneNumber            String
+  paymentIdempotencyKey  String
+  providerRequestId      String?
+  providerCheckoutId     String?
+  providerReceipt        String?
+  deadlineAt             DateTime?
+  deadlineReason         DeadlineReason?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  reconciliationAttempts ReconciliationAttempt[]
+  ledgerEntry            LedgerEntry?
+  refundObligations      RefundObligation[]
+
+  @@unique([orderId, paymentIdempotencyKey])
+  @@index([status, deadlineAt])
+  // NOTE: the "one active attempt per order" partial unique index
+  // (status IN PENDING/TIMEOUT/UNKNOWN) cannot be expressed in Prisma
+  // schema and is created via raw SQL in the migration.
+}
+
+// Append-only audit of every verification attempt. Exists so that
+// PROVIDER_UNREACHABLE (which produces NO status change) still has a
+// durable record — a status enum alone cannot represent it.
+model ReconciliationAttempt {
+  id               String                @id @default(cuid())
+  paymentAttempt   PaymentAttempt        @relation(fields: [paymentAttemptId], references: [id])
+  paymentAttemptId String
+  outcome          ReconciliationOutcome
+  providerResponse Json?
+  errorDetail      String?
+  attemptedAt      DateTime              @default(now())
+
+  @@index([paymentAttemptId, attemptedAt])
+}
+
+// Authoritative financial record. Created only inside
+// finalizeSuccessfulPayment(). Nullable fields are nullable because
+// their business policy is genuinely undefined — never fabricated.
+model LedgerEntry {
+  id                  String         @id @default(cuid())
+  paymentAttempt      PaymentAttempt @relation(fields: [paymentAttemptId], references: [id])
+  paymentAttemptId    String         @unique
+  order               Order          @relation(fields: [orderId], references: [id])
+  orderId             String
+  grossAmount         Float
+  currency            String         @default("KES")
+  fees                Float?
+  commission          Float?
+  vendorPayableAmount Float?
+  settlementState     String?
+  providerReference   String?
+  createdAt           DateTime       @default(now())
+
+  @@index([orderId])
+}
+
+// V2 records the obligation only. Refund EXECUTION (Daraja reversal /
+// B2C) is explicitly out of scope — REFUND_PENDING does not mean money
+// has moved.
+model RefundObligation {
+  id                         String         @id @default(cuid())
+  order                      Order          @relation(fields: [orderId], references: [id])
+  orderId                    String
+  originatingPaymentAttempt  PaymentAttempt @relation(fields: [originatingPaymentAttemptId], references: [id])
+  originatingPaymentAttemptId String
+  ledgerEntry                LedgerEntry?   @relation(fields: [ledgerEntryId], references: [id])
+  ledgerEntryId              String?
+  amount                     Float
+  currency                   String         @default("KES")
+  reason                     RefundReason
+  status                     RefundStatus   @default(REFUND_PENDING)
+  createdAt                  DateTime       @default(now())
+
+  @@index([orderId])
+  @@index([status])
 }
